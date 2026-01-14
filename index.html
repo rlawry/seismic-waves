@@ -1,0 +1,914 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Curved Rays (ak135-guided) P/S + Multipath</title>
+    <style>
+        :root {
+            --panel-w: 360px;
+            --border: rgba(0, 0, 0, 0.18);
+            --text: #111;
+            --muted: #555;
+            --bg: #fff;
+            --chip: rgba(0, 0, 0, 0.06);
+        }
+
+        html,
+        body {
+            margin: 0;
+            height: 100%;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        }
+
+        /* App layout: left panel + right canvas */
+        #app {
+            height: 100vh;
+            width: 100vw;
+            display: grid;
+            grid-template-columns: var(--panel-w) 1fr;
+            grid-template-rows: 1fr;
+        }
+
+        /* Control panel */
+        #panel {
+            border-right: 1px solid var(--border);
+            padding: 14px;
+            overflow: auto;
+            background: #fff;
+        }
+
+        #panel h1 {
+            font-size: 14px;
+            margin: 0 0 10px 0;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+        }
+
+        fieldset {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 10px 10px 12px 10px;
+            margin: 10px 0;
+        }
+
+        legend {
+            padding: 0 8px;
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        label {
+            font-size: 12px;
+            color: var(--muted);
+            display: block;
+            margin: 8px 0 6px;
+        }
+
+        select,
+        input[type="number"] {
+            width: 100%;
+            padding: 8px 10px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: #fff;
+            box-sizing: border-box;
+            font-size: 13px;
+        }
+
+        /* Slider row with value pill */
+        .sliderRow {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+        }
+
+        .pill {
+            min-width: 54px;
+            text-align: center;
+            font-size: 12px;
+            padding: 6px 8px;
+            border-radius: 999px;
+            background: var(--chip);
+            border: 1px solid var(--border);
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Checkbox rows */
+        .checkRow {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .checkRow input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Multipath grid */
+        .grid3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: #fff;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        button:active {
+            transform: translateY(1px);
+        }
+
+        .hint {
+            font-size: 12px;
+            color: var(--muted);
+            line-height: 1.3;
+            margin-top: 10px;
+        }
+
+        /* Canvas stage */
+        #stage {
+            position: relative;
+            background: #fff;
+        }
+
+        #c {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .waveRow {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .waveRow select {
+            flex: 1;
+        }
+
+        .waveRow .pill {
+            min-width: 84px;
+        }
+
+        /* Small screens: stack panel on top */
+        @media (max-width: 900px) {
+            #app {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto 1fr;
+            }
+
+            #panel {
+                border-right: none;
+                border-bottom: 1px solid var(--border);
+                max-height: 44vh;
+            }
+        }
+
+        /* Disabled container */
+        .disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+    </style>
+
+</head>
+
+<body>
+    <div id="app">
+        <aside id="panel">
+            <h1>Seismic Rays</h1>
+
+            <fieldset>
+                <legend>Wave + Display</legend>
+
+                <label for="wave">Wave type</label>
+                <div class="waveRow">
+                    <select id="wave">
+                        <option value="P" selected>P-wave</option>
+                        <option value="S">S-wave</option>
+                    </select>
+                    <div class="pill" id="waveVal">P (red)</div>
+                </div>
+
+                <div class="checkRow">
+                    <input id="showPaths" type="checkbox" checked />
+                    <label for="showPaths" style="margin:0;color:var(--text);">Show drawn paths</label>
+                </div>
+            </fieldset>
+
+            <fieldset>
+                <legend>Single path</legend>
+
+                <label for="angle">Launch angle (from inward radial)</label>
+                <div class="sliderRow">
+                    <input id="angle" type="range" min="-89.9" max="89.9" step="1" value="25" />
+                    <div class="pill" id="angleVal">25°</div>
+                </div>
+            </fieldset>
+
+            <fieldset>
+                <legend>Multipath</legend>
+
+                <div class="checkRow">
+                    <input id="multipath" type="checkbox" />
+                    <label for="multipath" style="margin:0;color:var(--text);">Enable multipath</label>
+                </div>
+
+                <div id="mpControls" class="disabled" style="margin-top:10px;">
+                    <div class="grid3">
+                        <div>
+                            <label for="minA">Min angle (°)</label>
+                            <input id="minA" type="number" min="-89.9" max="89.9" step="0.1" value="0">
+                        </div>
+                        <div>
+                            <label for="maxA">Max angle (°)</label>
+                            <input id="maxA" type="number" min="-89.9" max="89.9" step="0.1" value="45">
+                        </div>
+                        <div>
+                            <label for="stepA">Interval (°)</label>
+                            <input id="stepA" type="number" min="0.1" max="40" step="0.1" value="0.1">
+                        </div>
+                    </div>
+
+                    <div style="height:10px"></div>
+                    <button id="fire">Fire!</button>
+                </div>
+
+                <div class="hint">
+                    P particles are <span style="color:#d00;font-weight:700;">RED</span>, S particles are
+                    <span style="color:#0a0;font-weight:700;">GREEN</span>.
+                    S-waves reflect at the CMB (no propagation in the outer core).
+                </div>
+            </fieldset>
+        </aside>
+
+        <main id="stage">
+            <canvas id="c"></canvas>
+        </main>
+    </div>
+
+    <script>
+        (() => {
+            const canvas = document.getElementById("c");
+            const ctx = canvas.getContext("2d");
+
+            const waveSel = document.getElementById("wave");
+            const waveVal = document.getElementById("waveVal");
+
+            const angleSlider = document.getElementById("angle");
+            const angleVal = document.getElementById("angleVal");
+
+            const mpToggle = document.getElementById("multipath");
+            const mpControls = document.getElementById("mpControls");
+            const minAEl = document.getElementById("minA");
+            const maxAEl = document.getElementById("maxA");
+            const stepAEl = document.getElementById("stepA");
+            const fireBtn = document.getElementById("fire");
+            const showPathsEl = document.getElementById("showPaths");
+            let pathCache = document.createElement("canvas");
+            let pathCtx = pathCache.getContext("2d");
+
+
+            // -----------------------------
+            // Earth radii (km), to scale (for layer circles only)
+            // -----------------------------
+            const R_EARTH = 6371;
+
+            const radiiKm = {
+                surface: 6371,
+                crustBase: 6371 - 35,
+                rigidMantleBase: 6371 - 100,
+                asthenosphereBase: 6371 - 660,
+                cmb: 3480,
+                icb: 1221
+            };
+            const crustBaseDepthKm = 35;
+
+            // -----------------------------
+            // ak135-f velocities (subset)
+            // depth (km), Vp (km/s), Vs (km/s)
+            // -----------------------------
+            const upperPts = [
+                [0.0, 5.8000, 3.4600],
+                [20.0, 5.8000, 3.4600],
+                [20.0, 6.5000, 3.8500],
+                [35.0, 6.5000, 3.8500],
+                [35.0, 8.0400, 4.4800],
+                [77.5, 8.0450, 4.4900],
+                [120.0, 8.0500, 4.5000],
+            ];
+
+            const deepPts = [
+                [120.00, 8.0505, 4.5000],
+                [165.00, 8.1750, 4.5090],
+                [210.00, 8.3007, 4.5184],
+                [260.00, 8.4822, 4.6094],
+                [310.00, 8.6650, 4.6964],
+                [360.00, 8.8476, 4.7832],
+                [410.00, 9.0302, 4.8702],
+                [410.00, 9.3601, 5.0806],
+                [510.00, 9.6962, 5.2922],
+                [610.00, 10.0320, 5.5047],
+                [660.00, 10.2000, 5.6104],
+                [660.00, 10.7909, 5.9607],
+                [760.00, 11.0553, 6.2100],
+                [859.00, 11.2228, 6.2799],
+                [958.00, 11.3897, 6.3519],
+                [1057.00, 11.5493, 6.4182],
+                [1156.00, 11.7020, 6.4822],
+                [1255.00, 11.8491, 6.5431],
+                [1354.00, 11.9891, 6.6009],
+                [1453.00, 12.1247, 6.6554],
+                [1552.00, 12.2558, 6.7070],
+                [1651.00, 12.3813, 6.7579],
+                [1750.00, 12.5030, 6.8056],
+                [1849.00, 12.6226, 6.8517],
+                [1948.00, 12.7384, 6.8972],
+                [2047.00, 12.8524, 6.9416],
+                [2146.00, 12.9663, 6.9852],
+                [2245.00, 13.0786, 7.0286],
+                [2344.00, 13.1895, 7.0722],
+                [2443.00, 13.3017, 7.1144],
+                [2542.00, 13.4156, 7.1584],
+                [2640.00, 13.5311, 7.2031],
+                [2740.00, 13.6498, 7.2485],
+                [2839.33, 13.6570, 7.2700],
+                [2891.50, 13.6601, 7.2817],
+                [2891.50, 8.0000, 0.0000], // outer core Vs=0
+                [3039.99, 8.2213, 0.0000],
+                [3190.99, 8.4861, 0.0000],
+                [3341.98, 8.7283, 0.0000],
+                [3492.97, 8.9461, 0.0000],
+                [3643.97, 9.1426, 0.0000],
+                [3794.96, 9.3205, 0.0000],
+                [3945.95, 9.4814, 0.0000],
+                [4096.95, 9.6232, 0.0000],
+                [4247.94, 9.7513, 0.0000],
+                [4398.93, 9.8682, 0.0000],
+                [4549.93, 9.9761, 0.0000],
+                [4700.92, 10.0768, 0.0000],
+                [4851.91, 10.1739, 0.0000],
+                [5002.91, 10.2565, 0.0000],
+                [5103.57, 10.2854, 0.0000],
+                [5153.50, 10.2890, 0.0000],
+                [5153.50, 11.0427, 3.5043],
+                [5306.04, 11.0850, 3.5435],
+                [5458.17, 11.1316, 3.5765],
+                [5610.31, 11.1715, 3.6044],
+                [5762.45, 11.2041, 3.6272],
+                [5914.59, 11.2295, 3.6450],
+                [6066.72, 11.2477, 3.6577],
+                [6218.86, 11.2586, 3.6653],
+                [6371.00, 11.2622, 3.6678],
+            ];
+
+            const DEPTH_CMB = 2891.50;
+            const R_CMB = R_EARTH - DEPTH_CMB;
+
+            function interpFromPts(depthKm, pts, waveType, goingDeeper) {
+                const col = (waveType === "P") ? 1 : 2;
+                for (let i = 0; i < pts.length; i++) {
+                    const d = pts[i][0];
+                    if (Math.abs(depthKm - d) < 1e-10) {
+                        if (goingDeeper) {
+                            let j = i;
+                            while (j + 1 < pts.length && Math.abs(pts[j + 1][0] - d) < 1e-10) j++;
+                            return pts[j][col];
+                        } else {
+                            return pts[i][col];
+                        }
+                    }
+                    if (depthKm < d) {
+                        const i0 = Math.max(0, i - 1);
+                        const d0 = pts[i0][0], v0 = pts[i0][col];
+                        const d1 = pts[i][0], v1 = pts[i][col];
+                        const t = (depthKm - d0) / Math.max(1e-12, (d1 - d0));
+                        return v0 + (v1 - v0) * t;
+                    }
+                }
+                return pts[pts.length - 1][col];
+            }
+
+            function vAtDepth(depthKm, waveType, goingDeeper) {
+                depthKm = Math.max(0, Math.min(R_EARTH, depthKm));
+                if (depthKm <= 120) return interpFromPts(depthKm, upperPts, waveType, goingDeeper);
+                return interpFromPts(depthKm, deepPts, waveType, goingDeeper);
+            }
+
+            // -----------------------------
+            // Canvas scaling + Earth cache
+            // -----------------------------
+            let cx = 0, cy = 0, scale = 1, dpr = 1;
+            let earthCache = document.createElement("canvas");
+            let earthCtx = earthCache.getContext("2d");
+
+            function kmToPx(km) { return km * scale; }
+
+            function drawEarthTo(g, w, h) {
+                g.clearRect(0, 0, w, h);
+                g.lineWidth = 2;
+                g.strokeStyle = "#000";
+
+                const circlesKm = [
+                    radiiKm.surface,
+                    radiiKm.crustBase,
+                    radiiKm.rigidMantleBase,
+                    radiiKm.asthenosphereBase,
+                    radiiKm.cmb,
+                    radiiKm.icb
+                ];
+                for (const rKm of circlesKm) {
+                    const r = kmToPx(rKm);
+                    g.beginPath();
+                    g.arc(cx, cy, r, 0, Math.PI * 2);
+                    g.stroke();
+                }
+            }
+
+            function resize() {
+                dpr = Math.max(1, window.devicePixelRatio || 1);
+                canvas.width = Math.floor(canvas.clientWidth * dpr);
+                canvas.height = Math.floor(canvas.clientHeight * dpr);
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+                const w = canvas.clientWidth, h = canvas.clientHeight;
+                cx = w / 2; cy = h / 2;
+                const rSurfacePx = Math.min(w, h) * 0.45;
+                scale = rSurfacePx / R_EARTH;
+
+                earthCache.width = Math.floor(w * dpr);
+                earthCache.height = Math.floor(h * dpr);
+                earthCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                drawEarthTo(earthCtx, w, h);
+                pathCache.width = earthCache.width;
+                pathCache.height = earthCache.height;
+                pathCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                pathCtx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+
+                // if you already have paths computed, redraw revealed part after resize
+                redrawRevealedPaths();
+
+                // Keep current behavior (single-path follows slider unless multipath is enabled)
+                if (!mpToggle.checked) recomputeSinglePathFromSlider();
+            }
+
+            function clearPathLayer() {
+                pathCtx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+            }
+
+            // -----------------------------
+            // Ray path integration (1-D spherical ray-parameter integration)
+            // -----------------------------
+            const PATH_DS_KM = 6;          // smaller = smoother curvature, more compute
+            const MAX_STEPS = 25000;
+
+            function rayColor(waveType) { return (waveType === "P") ? "#d00" : "#0a0"; }
+
+            // Store one or many paths:
+            // each path: { angleDeg, pts: [{x,y}], t:[seconds], color }
+            let activePaths = [];
+
+            function computePath(angleDeg, waveType) {
+                // Preserve sign for hemisphere, but use magnitude for physics
+                const raw = Number(angleDeg);
+                if (!Number.isFinite(raw)) return null;
+
+                const hemi = (raw < 0) ? +1 : -1;              // +1 => top (CCW), -1 => bottom (CW)
+                const aDeg = Math.max(0, Math.min(89.9, Math.abs(raw)));
+                const i0 = aDeg * Math.PI / 180;
+
+                const r0 = R_EARTH - 1;
+                let r = r0;
+                let theta = Math.PI;
+                const signTheta = hemi;
+
+                const v0 = vAtDepth(R_EARTH - r0, waveType, true);
+                if (v0 <= 1e-6) return null;
+
+                // p should be >= 0; hemisphere is handled by signTheta
+                const p = (r0 * Math.sin(i0)) / v0;
+
+                const pts = [];
+                const tt = [];
+                let time = 0;
+
+                let inward = true;
+                let leftCrustOnce = false;
+                let prevDepth = 0;
+
+                const EPS_Q = 1e-6;
+                const EPS_R = 1e-3;                 // km
+                const R_MIN = 0.5;                  // km: numeric floor for p>0 rays (prevents r<=0)
+                const MAX_DTHETA = 0.01;            // rad per step (~0.57°) cap to prevent θ jumping past 0
+
+                for (let k = 0; k < MAX_STEPS; k++) {
+                    // S-wave cannot enter outer core: reflect at CMB
+                    if (waveType === "S" && inward && r <= R_CMB + 1e-6) {
+                        inward = false;
+                        r = R_CMB + EPS_R;
+                    }
+
+                    const depth = R_EARTH - r;
+                    let v = vAtDepth(depth, waveType, inward);
+
+                    if (waveType === "S" && v <= 1e-6) {
+                        // numeric drift into Vs=0 region -> force outward above CMB
+                        inward = false;
+                        r = Math.max(r, R_CMB + EPS_R);
+                        v = vAtDepth(R_EARTH - r, waveType, false);
+                        if (v <= 1e-6) break;
+                    }
+
+                    if (!leftCrustOnce && depth > crustBaseDepthKm) leftCrustOnce = true;
+                    prevDepth = depth;
+
+                    // store sample
+                    pts.push({ x: r * Math.cos(theta), y: r * Math.sin(theta) });
+                    tt.push(time);
+
+                    // q = p v / r
+                    let qPrev = (p * v) / Math.max(1e-9, r);
+
+                    // If we're at/over turning condition, turn outward and nudge
+                    if (qPrev >= 1 - EPS_Q) {
+                        inward = false;
+                        if (p > 1e-12) r = Math.max(r, R_MIN) + EPS_R;
+                        continue;
+                    }
+
+                    const sinPsi = qPrev;
+                    const cosPsiMag = Math.sqrt(Math.max(0, 1 - sinPsi * sinPsi));
+                    const cosPsi = inward ? -cosPsiMag : +cosPsiMag;
+
+                    // --- choose a stable ds ---
+                    let ds = PATH_DS_KM;
+
+                    // (A) cap angular step so theta can't jump past 0 in one iteration
+                    // dtheta ≈ (sinPsi / r) * ds  => ds <= MAX_DTHETA * r / sinPsi
+                    if (sinPsi > 1e-9) {
+                        ds = Math.min(ds, (MAX_DTHETA * r) / sinPsi);
+                    }
+
+                    // (B) for p>0 rays, never step r below R_MIN while going inward
+                    if (inward && p > 1e-12 && cosPsi < 0) {
+                        const dsToRmin = (r - R_MIN) / (-cosPsi);
+                        ds = Math.min(ds, Math.max(1e-6, dsToRmin));
+                    }
+
+                    const rPrev = r, thetaPrev = theta, timePrev = time;
+
+                    // propose next state (use rPrev in denominator for stability)
+                    let rNext = rPrev + cosPsi * ds;
+                    let thetaNext = thetaPrev + signTheta * (sinPsi / Math.max(1e-9, rPrev)) * ds;
+                    let timeNext = timePrev + ds / Math.max(1e-6, v);
+
+                    // --- turning-point interpolation (inward only) ---
+                    if (inward && p > 1e-12) {
+                        const depthNext = R_EARTH - Math.max(R_MIN, rNext);
+                        const vNext = vAtDepth(depthNext, waveType, true);
+                        const qNext = (p * vNext) / Math.max(1e-9, Math.max(R_MIN, rNext));
+
+                        if (qNext >= 1) {
+                            const denom = Math.max(1e-12, (qNext - qPrev));
+                            const f = Math.min(1, Math.max(0, (1 - qPrev) / denom));
+
+                            r = rPrev + (rNext - rPrev) * f;
+                            theta = thetaPrev + (thetaNext - thetaPrev) * f;
+                            time = timePrev + (timeNext - timePrev) * f;
+
+                            inward = false;
+                            r = Math.max(r, R_MIN) + EPS_R;
+                            if (waveType === "S") r = Math.max(r, R_CMB + EPS_R);
+                            continue;
+                        }
+                    }
+
+                    // accept
+                    r = rNext;
+                    theta = thetaNext;
+                    time = timeNext;
+
+                    // IMPORTANT: for any angle>0 (p>0), do NOT allow center crossing.
+                    // If numerical drift tries to push r <= 0, clamp and flip outward.
+                    if (p > 1e-12 && r <= R_MIN) {
+                        r = R_MIN + EPS_R;
+                        inward = false;
+                    } else if (p <= 1e-12 && r < 0) {
+                        // only allow true diameter ray (angle ~ 0) to cross center
+                        r = -r;
+                        theta += Math.PI;
+                        inward = false;
+                    }
+
+                    const TAU = Math.PI * 2;
+                    theta = ((theta % TAU) + TAU) % TAU;
+
+                    const depthAfter = R_EARTH - r;
+
+                    // stop when coming back up through crust base after having left it
+                    if (leftCrustOnce && !inward && prevDepth > crustBaseDepthKm && depthAfter <= crustBaseDepthKm) {
+                        break;
+                    }
+
+                    if (r >= R_EARTH && k > 50) break;
+                }
+
+                if (tt.length < 2) return null;
+
+                return {
+                    angleDeg,
+                    pts,
+                    t: tt,
+                    color: rayColor(waveType),
+                    waveType,
+                    revealI: 0,
+                    maxTime: 0
+                };
+            }
+
+
+
+            function recomputeSinglePathFromSlider() {
+                particles.length = 0;
+                const waveType = waveSel.value;
+                const angleDeg = parseFloat(angleSlider.value);
+                angleVal.textContent = `${angleDeg}°`;
+                waveVal.textContent = (waveType === "P") ? "P (red)" : "S (green)";
+
+                const p = computePath(angleDeg, waveType);
+                activePaths = p ? [p] : [];
+                clearPathLayer();
+                for (const p of activePaths) { p.revealI = 0; p.maxTime = 0; }
+
+            }
+
+            function redrawRevealedPaths() {
+                clearPathLayer();
+                if (!showPathsEl.checked) return;
+
+                for (const pth of activePaths) {
+                    const idx = Math.max(0, Math.min(pth.revealI, pth.pts.length - 1));
+                    pth.revealI = 0;
+                    revealPathTo(pth, idx);
+                }
+            }
+
+
+            // -----------------------------
+            // Particle emission along paths
+            // -----------------------------
+            const particles = [];
+            const PARTICLE_R = 2;
+
+            // For continuous mode (single path when multipath is off)
+            const EMIT_INTERVAL_MS = 40;
+            let emitAcc = 0;
+
+            // For burst mode (Fire!)
+            const BURST_COUNT_PER_PATH = 80;      // how many particles per path
+            const BURST_SPREAD_SEC = 0.9;         // total time spread for the burst start times
+            const TIME_SCALE = 195;                // overall particle speed along the path
+
+            function spawnParticleOnPath(pathObj, startTimeOffset) {
+                particles.push({
+                    path: pathObj,
+                    time: startTimeOffset,
+                    i: 0
+                });
+            }
+
+            function fireMultipath() {
+                particles.length = 0;
+                emitAcc = 0;
+
+                const waveType = waveSel.value;
+                waveVal.textContent = (waveType === "P") ? "P (red)" : "S (green)";
+
+                // Normalize angles
+                let minA = Math.max(-89.9, Math.min(89.9, parseFloat(minAEl.value)));
+                let maxA = Math.max(-89.9, Math.min(89.9, parseFloat(maxAEl.value)));
+                let step = Math.max(0.1, Math.min(400, parseFloat(stepAEl.value)));
+
+                if (!Number.isFinite(minA)) minA = 0;
+                if (!Number.isFinite(maxA)) maxA = 80;
+                if (!Number.isFinite(step)) step = 1;
+
+                if (maxA < minA) [minA, maxA] = [maxA, minA];
+
+                // Build paths
+                const paths = [];
+                for (let a = minA; a <= maxA + 1e-9; a += step) {
+                    const p1 = computePath(+a, waveType);
+                    const p2 = computePath(-a, waveType);
+                    if (p1) paths.push(p1);
+                    if (p2) paths.push(p2);
+                }
+                activePaths = paths;
+                clearPathLayer();
+                for (const p of activePaths) { p.revealI = 0; p.maxTime = 0; }
+
+
+                // Emit a burst along each path
+                for (const p of activePaths) {
+                    for (let k = 0; k < BURST_COUNT_PER_PATH; k++) {
+                        const offset = (k / Math.max(1, BURST_COUNT_PER_PATH - 1)) * BURST_SPREAD_SEC;
+                        spawnParticleOnPath(p, offset);
+                    }
+                }
+            }
+
+            function emitContinuous(dt) {
+                if (activePaths.length !== 1) return;
+                emitAcc += dt * 1000;
+                while (emitAcc >= EMIT_INTERVAL_MS) {
+                    emitAcc -= EMIT_INTERVAL_MS;
+                    spawnParticleOnPath(activePaths[0], 0);
+                }
+            }
+
+            function upperBoundTime(arr, x) {
+                let lo = 0, hi = arr.length - 1;
+                while (lo < hi) {
+                    const mid = ((lo + hi + 1) >> 1);
+                    if (arr[mid] <= x) lo = mid; else hi = mid - 1;
+                }
+                return lo;
+            }
+
+            function revealPathTo(pathObj, targetI) {
+                const start = pathObj.revealI;
+                if (targetI <= start) return;
+
+                pathCtx.save();
+                pathCtx.globalAlpha = 0.35;
+                pathCtx.strokeStyle = pathObj.color;
+                pathCtx.lineWidth = 1.4;
+
+                const p0 = pathObj.pts[start];
+                pathCtx.beginPath();
+                pathCtx.moveTo(cx + kmToPx(p0.x), cy + kmToPx(p0.y));
+
+                for (let i = start + 1; i <= targetI; i++) {
+                    const p = pathObj.pts[i];
+                    pathCtx.lineTo(cx + kmToPx(p.x), cy + kmToPx(p.y));
+                }
+                pathCtx.stroke();
+                pathCtx.restore();
+
+                pathObj.revealI = targetI;
+            }
+
+            function particlePos(p) {
+                const tt = p.path.t;
+                const pts = p.path.pts;
+                const n = tt.length;
+
+                if (p.time <= tt[0]) return pts[0];
+                if (p.time >= tt[n - 1]) return pts[n - 1];
+
+                while (p.i < n - 2 && p.time > tt[p.i + 1]) p.i++;
+
+                const i0 = p.i, i1 = i0 + 1;
+                const t0 = tt[i0], t1 = tt[i1];
+                const aRaw = (p.time - t0) / Math.max(1e-9, (t1 - t0));
+                const a = Math.min(1, Math.max(0, aRaw));
+
+                const A = pts[i0], B = pts[i1];
+                return { x: A.x + (B.x - A.x) * a, y: A.y + (B.y - A.y) * a };
+            }
+
+
+            function update(dt) {
+                if (!mpToggle.checked) emitContinuous(dt);
+
+                // reset leader time each frame
+                for (const pth of activePaths) pth.maxTime = 0;
+
+                // advance particles ONCE
+                for (const p of particles) {
+                    p.time += dt * TIME_SCALE;
+
+                    const tEnd = p.path.t[p.path.t.length - 1];
+                    if (p.time >= tEnd) {
+                        p.time = tEnd;     // clamp so particlePos can't extrapolate
+                        p._dead = true;
+                    }
+
+                    if (p.time > p.path.maxTime) p.path.maxTime = p.time;
+                }
+
+                // remove dead immediately (so they don't draw a "teleport" frame)
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    if (particles[i]._dead) particles.splice(i, 1);
+                }
+
+                // reveal
+                if (showPathsEl.checked) {
+                    for (const pth of activePaths) {
+                        if (!pth.t || pth.t.length < 2) continue;
+                        const idx = upperBoundTime(pth.t, pth.maxTime);
+                        revealPathTo(pth, idx);
+                    }
+                }
+            }
+
+
+            // -----------------------------
+            // Draw
+            // -----------------------------
+            function draw() {
+                ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+                ctx.drawImage(earthCache, 0, 0, earthCache.width / dpr, earthCache.height / dpr);
+
+                if (showPathsEl.checked) {
+                    ctx.drawImage(pathCache, 0, 0, pathCache.width / dpr, pathCache.height / dpr);
+                }
+
+
+                // Particles
+                for (const p of particles) {
+                    const k = particlePos(p);
+                    const x = cx + kmToPx(k.x);
+                    const y = cy + kmToPx(k.y);
+                    ctx.fillStyle = p.path.color;
+                    ctx.beginPath();
+                    ctx.arc(x, y, PARTICLE_R, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // -----------------------------
+            // Loop + UI wiring
+            // -----------------------------
+            let last = performance.now();
+            function tick(now) {
+                const dt = Math.min(0.05, (now - last) / 1000);
+                last = now;
+                update(dt);
+                draw();
+                requestAnimationFrame(tick);
+            }
+
+            function setMpEnabled(enabled) {
+                mpControls.classList.toggle("disabled", !enabled);
+                angleSlider.disabled = enabled; // when multipath on, single slider doesn't control firing
+                if (!enabled) {
+                    recomputeSinglePathFromSlider();
+                } else {
+                    // show whatever the current wave type is, but don't compute paths until Fire!
+                    particles.length = 0;
+                    activePaths = [];
+                }
+            }
+
+            mpToggle.addEventListener("change", () => setMpEnabled(mpToggle.checked));
+
+            waveSel.addEventListener("change", () => {
+                if (!mpToggle.checked) {
+                    recomputeSinglePathFromSlider();
+                } else {
+                    // multipath mode: just update label; user must click Fire to recompute
+                    const waveType = waveSel.value;
+                    waveVal.textContent = (waveType === "P") ? "P (red)" : "S (green)";
+                    particles.length = 0;
+                    activePaths = [];
+                }
+            });
+
+            angleSlider.addEventListener("input", () => {
+                if (!mpToggle.checked) recomputeSinglePathFromSlider();
+            });
+
+            fireBtn.addEventListener("click", fireMultipath);
+
+            window.addEventListener("resize", resize);
+
+            // init
+            resize();
+            recomputeSinglePathFromSlider();
+            requestAnimationFrame(tick);
+        })();
+    </script>
+</body>
+
+</html>
